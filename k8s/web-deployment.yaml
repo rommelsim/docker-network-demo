@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-web-app
+  labels:
+    app: node-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: node-web
+  template:
+    metadata:
+      labels:
+        app: node-web
+    spec:
+      containers:
+      - name: web
+        image: docker-demo-web:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MONGO_URL
+          value: "mongodb://mongo-service:27017"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-web-service
+spec:
+  selector:
+    app: node-web
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

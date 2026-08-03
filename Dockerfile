@@ -1,5 +1,5 @@
 # base image to start with
-FROM node:16
+FROM docker.io/library/node:16
 
 # create app dir
 WORKDIR /usr/src/app

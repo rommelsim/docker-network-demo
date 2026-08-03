@@ -8,49 +8,33 @@ const HOST = '0.0.0.0';
 // 📊 Initialize Prometheus metrics gathering
 client.collectDefaultMetrics({ register: client.register });
 
-// track volume, status code, latency
+// Track volume, status code, latency
 const httpRequestDurationMicroseconds = new client.Histogram({
     name: 'http_request_duration_seconds',
     help: 'Duration of HTTP requests in seconds',
-    labelNames: ['method', 'route', 'status_code'], // 🏷️ These allow us to split data by 2xx/4xx/5xx!
+    labelNames: ['method', 'route', 'status_code'], // 🏷️ Split data by 2xx/4xx/5xx!
     buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5] // Latency buckets
 });
 
-
-// 🔗 DATABASE CONNECTION
-// Fallback to the environment variable we provided in the K8s deployment file!
+// 🌐 GLOBAL DATABASE VARIABLES
 const url = process.env.MONGO_URL || 'mongodb://db:27017';
 const mongoClient = new MongoClient(url);
 const dbName = 'namesDB';
-let db, namesCollection;
-
-// Connect to MongoDB before starting the Express server
-async function initDatabase() {
-    try {
-        await mongoClient.connect();
-        db = mongoClient.db(dbName);
-        namesCollection = db.collection('names');
-        console.log("Connected successfully to MongoDB");
-    } catch (err) {
-        console.error("Database connection failed:", err);
-    }
-}
-initDatabase();
+let db;
+let namesCollection; // 👈 Shared globally with the route handlers below
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// middleware to intercept all incoming traffic.
+// Middleware to intercept all incoming traffic for telemetry
 app.use((req, res, next) => {
     const start = process.hrtime();
 
-    // When the response finishes processing, record the metrics
     res.on('finish', () => {
         const diff = process.hrtime(start);
         const durationInSeconds = diff[0] + diff[1] / 1e9;
         
-        // Don't track the scrapers hitting /metrics or asset noise
         if (req.path !== '/metrics') {
             httpRequestDurationMicroseconds
                 .labels(req.method, req.path, res.statusCode)
@@ -61,7 +45,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// 📊 NEW: Expose the /metrics endpoint for Prometheus to scrape
+// 📊 Expose the /metrics endpoint for Prometheus to scrape
 app.get('/metrics', async (req, res) => {
     res.set('Content-Type', client.register.contentType);
     res.end(await client.register.metrics());
@@ -130,6 +114,23 @@ app.post('/delete/:id', async (req, res) => {
     res.redirect('/');
 });
 
-app.listen(PORT, HOST, () => {
-    console.log(`Running on http://${HOST}:${PORT}`);
-});
+// 🔗 BOOTCHAIN: Start Express ONLY after Mongo answers the phone successfully
+async function startServer() {
+    try {
+        console.log("Connecting to MongoDB...");
+        await mongoClient.connect();
+        db = mongoClient.db(dbName);
+        namesCollection = db.collection('names');
+        console.log("Connected successfully to MongoDB");
+
+        app.listen(PORT, HOST, () => {
+            console.log(`Running on http://${HOST}:${PORT}`);
+        });
+
+    } catch (err) {
+        console.error("Critical Failure: Database connection failed!", err);
+        process.exit(1); 
+    }
+}
+
+startServer();
