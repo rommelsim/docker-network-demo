@@ -16,7 +16,8 @@ spec:
     spec:
       containers:
       - name: web
-        image: docker-demo-web:latest
+        image: localhost/docker-demo-web:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
