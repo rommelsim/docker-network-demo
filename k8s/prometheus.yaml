@@ -9,7 +9,9 @@ data: # 🛠️ Fixed: Removed 'spec:' and put 'data:' right under metadata!
     scrape_configs:
       - job_name: 'node-app'
         static_configs:
-          - targets: ['node-web-service:8080'] 
+          # Podman doesn't resolve k8s Service names, so target the pod names
+          # directly — both backends, so Prometheus scrapes each one.
+          - targets: ['node-web-a-pod:8080', 'node-web-b-pod:8080']
 ---
 apiVersion: apps/v1
 kind: Deployment
