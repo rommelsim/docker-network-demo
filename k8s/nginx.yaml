@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# nginx front door: reverse proxy + round-robin load balancer.
+#
+# Mirrors the ConfigMap pattern used in k8s/prometheus.yaml — the config file is
+# embedded inline here (this is the copy Podman actually mounts). The standalone
+# nginx/default.conf is the human-readable source; keep the two in sync.
+#
+# Bring up (publish flag lives on the COMMAND, not the YAML):
+#   podman kube play --publish 8082:80 k8s/nginx.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  default.conf: |
+    upstream node_backends {
+        server node-web-a-pod:8080;
+        server node-web-b-pod:8080;
+    }
+
+    server {
+        listen 80;
+
+        location / {
+            proxy_pass http://node_backends;
+
+            # Reveals which backend served the request (load-balancing proof):
+            #   curl -D - localhost:8082 | grep X-Upstream
+            add_header X-Upstream $upstream_addr;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:latest
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            # nginx auto-loads any *.conf in /etc/nginx/conf.d/
+            - name: config-volume
+              mountPath: /etc/nginx/conf.d/
+      volumes:
+        - name: config-volume
+          configMap:
+            name: nginx-config
+---
+# Kept for real-Kubernetes portability; Podman ignores Services (no CoreDNS/VIP).
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: NodePort

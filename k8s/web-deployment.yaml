@@ -1,11 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TWO web backends so nginx has something to load-balance across.
+#
+# WHY TWO DEPLOYMENTS instead of one Deployment with `replicas: 2`?
+#   `podman kube play` does NOT honor replicas — it only ever creates ONE
+#   container per Deployment, and has no --scale flag. So on real Kubernetes
+#   the idiomatic form is a single Deployment (replicas: 2) behind a Service;
+#   under Podman we fake it with two separately-named Deployments.
+#
+# WHY names node-web-a / node-web-b?
+#   Podman DNS resolves POD names (e.g. node-web-a-pod), not k8s Service names.
+#   nginx/default.conf points its upstream at those two pod names.
+#
+# NOTE: these backends are NOT published to the host anymore. nginx is the only
+#       front door (published on the `podman kube play` command with --publish).
+# ─────────────────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: node-web-app
+  name: node-web-a
   labels:
     app: node-web
 spec:
-  replicas: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-web
+  template:
+    metadata:
+      labels:
+        app: node-web
+    spec:
+      containers:
+      - name: web
+        image: localhost/docker-demo-web:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MONGO_URL
+          # Podman pod name for Mongo (k8s Service DNS "mongo-service" does NOT
+          # resolve under podman kube play — only the pod name does).
+          value: "mongodb://mongo-db-pod:27017"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-web-b
+  labels:
+    app: node-web
+spec:
+  replicas: 1
   selector:
     matchLabels:
       app: node-web
@@ -24,6 +68,9 @@ spec:
         - name: MONGO_URL
           value: "mongodb://mongo-db-pod:27017"
 ---
+# The Service below is kept for real-Kubernetes portability, but Podman IGNORES
+# it (no CoreDNS, no Service VIP). Under Podman, nginx talks to pod names, and
+# host access comes from `--publish` on the nginx pod — not from this Service.
 apiVersion: v1
 kind: Service
 metadata:
