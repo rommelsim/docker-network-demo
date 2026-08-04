@@ -68,18 +68,6 @@ spec:
         - name: MONGO_URL
           value: "mongodb://mongo-db-pod:27017"
 ---
-# The Service below is kept for real-Kubernetes portability, but Podman IGNORES
-# it (no CoreDNS, no Service VIP). Under Podman, nginx talks to pod names, and
-# host access comes from `--publish` on the nginx pod — not from this Service.
-apiVersion: v1
-kind: Service
-metadata:
-  name: node-web-service
-spec:
-  selector:
-    app: node-web
-  ports:
-    - protocol: TCP
-      port: 8082
-      targetPort: 8080
-  type: ClusterIP
+# The Service block was removed — Podman ignores Services (no CoreDNS/VIP), so
+# it did nothing here. nginx talks to pod names and host access comes from
+# `--publish` on the nginx pod. Re-add a Service only if moving to real k8s.
